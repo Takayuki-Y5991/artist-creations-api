@@ -28,8 +28,16 @@
 
 (defn parallel-async [& steps]
   (fn [x]
-    (let [futures (map #(future (% x)) steps)
-          results (map deref futures)]
+    (let [promises (map (fn [step]
+                          (let [p (promise)]
+                            (future
+                              (try
+                                (deliver p (step x))
+                                (catch Exception e
+                                  (deliver p (error (str "Exception: " (.getMessage e)))))))
+                            p))
+                        steps)
+          results (map deref promises)]
       (if (every? :ok results)
         (ok (map :ok results))
         (error (some :error (filter :error results)))))))

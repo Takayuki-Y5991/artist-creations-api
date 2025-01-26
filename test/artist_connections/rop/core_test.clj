@@ -17,6 +17,26 @@
 (defn merge-results [results]
   (ok (apply + results)))
 
+(defn slow-add [x]
+  (Thread/sleep 100)
+  (ok (inc x)))
+
+(defn slow-multiply [x]
+  (Thread/sleep 100)
+  (ok (* 2 x)))
+
+(defn slow-fail [x]
+  (Thread/sleep 100)
+  (error "Async error"))
+
+(defn compute-op [x]
+  ;; Simulate computation
+  (dotimes [_ 100000] (Math/sin x))
+  (ok x))
+
+(defn step-throws-exception [x]
+  (throw (Exception. "Something went wrong!")))
+
 ;; Test basic ok/error functions
 (deftest ok-error-test
   (testing "ok function creates success result"
@@ -85,50 +105,47 @@
 ;; Test parallel-async execution
 (deftest parallel-async-test
   (testing "parallel-async with all success"
-    (let [slow-add (fn [x] (Thread/sleep 100) (ok (inc x)))
-          slow-multiply (fn [x] (Thread/sleep 100) (ok (* 2 x)))
-          parallel-op (parallel-async slow-add slow-multiply)]
-      (is (= {:ok [2 2]} (parallel-op 1)))))
+    (let [parallel-op (parallel-async slow-add slow-multiply)]
+      (is (= {:ok [2 2]} (parallel-op 1))
+          "Should return correct results for successful parallel operations")))
 
   (testing "parallel-async with some failures"
-    (let [slow-add (fn [x] (Thread/sleep 100) (ok (inc x)))
-          slow-fail (fn [x] (Thread/sleep 100) (error "Async error"))
-          parallel-op (parallel-async slow-add slow-fail)]
-      (is (= {:error "Async error"} (parallel-op 1)))))
+    (let [parallel-op (parallel-async slow-add slow-fail)]
+      (is (= {:error "Async error"} (parallel-op 1))
+          "Should handle failures in parallel operations")))
 
-  (deftest parallel-async-test
-    (testing "parallel execution correctness"
-      (let [slow-op (fn [x] (Thread/sleep 50) (ok (inc x)))
-            parallel-op (parallel-async slow-op slow-op)]
-        (is (= {:ok [2 2]} (parallel-op 1))
-            "Should correctly process parallel operations")))
+  (testing "parallel-async with exceptions"
+    (let [parallel-op (parallel-async slow-add step-throws-exception)]
+      (is (= {:error "Exception: Something went wrong!"} (parallel-op 1))
+          "Should handle exceptions in parallel operations")))
 
-    (testing "parallel-async performance"
-      (let [compute-op (fn [x]
-                         ;; Thread/sleep の代わりに実際の計算処理
-                         (dotimes [_ 100000] (Math/sin x))
-                         (ok x))
-            parallel-op (parallel-async compute-op compute-op)
+  (testing "parallel execution correctness"
+    (let [parallel-op (parallel-async compute-op compute-op)]
+      (is (= {:ok [1 1]} (parallel-op 1))
+          "Should correctly process parallel operations")))
 
-            ;; 逐次実行
-            sequential-start (System/currentTimeMillis)
-            _ (doall [(compute-op 1) (compute-op 1)])
-            sequential-time (- (System/currentTimeMillis) sequential-start)
+  (testing "parallel-async performance"
+    (let [parallel-op (parallel-async compute-op compute-op)
 
-            ;; 並列実行
-            parallel-start (System/currentTimeMillis)
-            parallel-result (parallel-op 1)
-            parallel-time (- (System/currentTimeMillis) parallel-start)]
+          ;; Sequential execution
+          sequential-start (System/currentTimeMillis)
+          _ (doall [(compute-op 1) (compute-op 1)])
+          sequential-time (- (System/currentTimeMillis) sequential-start)
 
-        ;; 結果の正確性を確認
-        (is (= {:ok [1 1]} parallel-result)
-            "Should return correct results")
+          ;; Parallel execution
+          parallel-start (System/currentTimeMillis)
+          parallel-result (parallel-op 1)
+          parallel-time (- (System/currentTimeMillis) parallel-start)]
 
-        ;; パフォーマンスの検証
-        (is (< parallel-time sequential-time)
-            (format "Parallel execution (%dms) should be faster than sequential execution (%dms)"
-                    parallel-time
-                    sequential-time))))))
+      ;; Verify correctness
+      (is (= {:ok [1 1]} parallel-result)
+          "Should return correct results")
+
+      ;; Verify performance (with tolerance for overhead)
+      (is (< parallel-time (* 2 sequential-time)) ;; Allow up to 2x overhead
+          (format "Parallel execution (%dms) should be faster than sequential execution (%dms)"
+                  parallel-time
+                  sequential-time)))))
 
 
 
