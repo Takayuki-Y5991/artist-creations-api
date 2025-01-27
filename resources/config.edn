@@ -1,1 +1,28 @@
-{:api/server {:port 8080}}
+{:artist-connections.port.outbound.grpc/config
+ {:host #profile {:dev "localhost"
+                  :prod #env GRPC_HOST}
+  :port #profile {:dev 50051
+                  :prod #env GRPC_PORT}}
+
+ :artist-connections.adapter.outbound/oauth2-client
+ {:grpc-config #ig/ref :artist-connections.port.outbound.grpc/config
+  :client-id #profile {:dev "dev-client-id"
+                       :prod #env OAUTH2_CLIENT_ID}
+  :client-secret #profile {:dev "dev-client-secret"
+                           :prod #env OAUTH2_CLIENT_SECRET}}
+
+ :artist-connections.adapter.inbound.middleware/oauth2
+ {:client-id #env OAUTH2_CLIENT_ID
+  :client-secret #env OAUTH2_CLIENT_SECRET
+  :allowed-redirect-uris #profile
+                          {:dev ["http://localhost:3000/callback"]
+                           :prod #env ALLOWED_REDIRECT_URIS}}
+
+ :artist-connections.adapter.inbound.rest/oauth2-routes
+ {:middleware #ig/ref :artist-connections.adapter.inbound.middleware/oauth2
+  :oauth2-client #ig/ref :artist-connections.adapter.outbound/oauth2-client}
+
+ :artist-connections/http-server
+ {:port #profile {:dev 3000
+                  :prod #env PORT}
+  :handler #ig/ref :artist-connections.adapter.inbound.rest/oauth2-routes}}
